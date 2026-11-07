@@ -42,6 +42,16 @@ A DeepSeek Harness plugin that permanently removes archived Sessions — DSH has
 
 - **文件已经不在、只剩归档登记**：不产生隔离批次，只清掉登记，结果里记为 `cleaned`。设置页会把这类行标成「文件已不在」。
 - **拒绝删除**：会话没有归档（API 层可用 `requireArchived: false` 关闭），或会话正在运行（`agent.status === 'running'`）。
+- **行不会残留**：删除/恢复成功后，浏览器半会重新拉取会话列表（`ctx.get('sessions').refresh()`），侧边栏那一行立即消失或回来，不需要重启。
+
+## 已知限制 / Known limitations
+
+- **仍驻留内存的会话**：如果这个会话在当前进程里被打开过（Agent 仍在内存中，状态 `idle`），它的文件和归档登记都已经删掉，但侧边栏那行要等重启 Harness 才会消失——列表由内存里的 Session 记录构成，插件无法从外部把它逐出。删除结果里的 `resident` 字段会列出这种情况，界面也会提示。
+- **升级后刷新一次页面**：浏览器半是随页面加载的，插件更新（或首次安装）之后需要刷新一次 Harness 页面，新的 client 代码才会生效。
+
+## 诊断 / Diagnostics
+
+`POST /dsh-session-cleanup/rpc` 带 `{"action":"probe"}` 返回各层当前看到的会话：`sessionPersistence`、`sessionQuery`（含 `live`/`persisted`）、内存 Session 表、以及 Agent 列表。排查「删了还显示」时先看这里：只要 `query` 里还有 `live: true`，就属于上面那条限制。
 
 ## 隔离区 / Trash
 

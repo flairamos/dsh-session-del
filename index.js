@@ -97,9 +97,43 @@ function createRuntime(ctx) {
         return serialize(() => emptyTrash())
       case 'purgeTemp':
         return serialize(() => purgeTemp(payload))
+      case 'probe':
+        return probe()
       default:
         throw new Error(`Unknown action ${JSON.stringify(action)}`)
     }
+  }
+
+  /** Temporary diagnostic: what every layer still reports after a delete. */
+  async function probe() {
+    const result = { persistence: [], query: [], live: [], agents: [] }
+    try {
+      result.persistence = (await ctx.sessionPersistence.list()).map(snapshot => snapshot?.header?.id)
+    } catch (error) {
+      result.persistence = [`error: ${messageOf(error)}`]
+    }
+    try {
+      const query = ctx.get('sessionQuery')
+      const records = await query?.listSessions?.()
+      result.query = (records ?? []).map(record => ({
+        id: record?.header?.id,
+        live: record?.live,
+        persisted: record?.persisted,
+      }))
+    } catch (error) {
+      result.query = [`error: ${messageOf(error)}`]
+    }
+    try {
+      result.live = (ctx.get('sessions')?.list?.() ?? []).map(session => session?.id)
+    } catch (error) {
+      result.live = [`error: ${messageOf(error)}`]
+    }
+    try {
+      result.agents = (ctx.get('agents')?.list?.() ?? []).map(agent => ({ id: agent?.id, status: agent?.status }))
+    } catch (error) {
+      result.agents = [`error: ${messageOf(error)}`]
+    }
+    return result
   }
 
   /** @returns every root this plugin reads plus the full cleanup inventory. */
@@ -177,6 +211,8 @@ function createRuntime(ctx) {
     const manifest = { version: 1, kind: 'sessions', batchId, createdAt: new Date().toISOString(), entries: [] }
     const deleted = []
     const cleaned = []
+    const resident = []
+    const sessions = ctx.get('sessions')
 
     for (const id of removable) {
       // Resolve what exists before touching anything: a registration can outlive
@@ -194,6 +230,12 @@ function createRuntime(ctx) {
         continue
       }
 
+      try {
+        if (sessions?.get?.(id) !== undefined) resident.push(id)
+      } catch {
+        // A missing Session store only costs the restart notice.
+      }
+
       const workspaceId = store.owner.get(id)
       const siblings = workspaceId === undefined ? undefined : store.order.get(workspaceId)
       const at = siblings === undefined ? -1 : siblings.indexOf(id)
@@ -209,12 +251,10 @@ function createRuntime(ctx) {
         bytes: 0,
       }
       await detachEverywhere(ctx, id)
-      const reason = await unarchive(ctx, id)
-      if (reason !== undefined) {
-        skipped.push({ id, reason })
-        continue
-      }
 
+      // Move first, clear the archive record second: a still-present Session that
+      // leaves the archive set is exactly what makes the sidebar hand the row
+      // back to its Workspace.
       if (sessionDir !== undefined) {
         entry.bytes = (await measure(sessionDir)).bytes
         entry.sessionTrash = join(batchDir, 'sessions', id)
@@ -231,6 +271,8 @@ function createRuntime(ctx) {
         log: entry.sessionDir !== undefined,
         cache: entry.cachePath !== undefined,
       })
+      const reason = await unarchive(ctx, id)
+      if (reason !== undefined) skipped.push({ id, reason })
     }
 
     if (manifest.entries.length > 0) {
@@ -242,6 +284,7 @@ function createRuntime(ctx) {
       deleted,
       cleaned,
       skipped,
+      resident,
     }
   }
 

@@ -46,6 +46,7 @@ window.__ModuleLoader__.load({
       roots: 'Locations',
       missingFiles: 'files already gone',
       cleaned: 'Stale registrations cleared.',
+      restartNotice: 'Deleted. A Session still held in memory leaves the list after a restart.',
     }
 
     const ZH = {
@@ -79,6 +80,7 @@ window.__ModuleLoader__.load({
       roots: '位置',
       missingFiles: '文件已不在',
       cleaned: '已清理失效的归档登记。',
+      restartNotice: '已删除；仍有会话驻留在内存中，重启 Harness 后才会从列表消失。',
     }
 
     const TOKENS = {
@@ -185,7 +187,7 @@ window.__ModuleLoader__.load({
       return h('button', { type: 'button', style, ...rest }, children)
     }
 
-    function CleanupPage({ dictionary }) {
+    function CleanupPage({ dictionary, refreshSessions }) {
       const t = dictionary
       const [state, setState] = useState(null)
       const [error, setError] = useState('')
@@ -216,6 +218,9 @@ window.__ModuleLoader__.load({
         try {
           const value = await task()
           await refresh()
+          // The sidebar keeps its own Session list snapshot: without this pull it
+          // keeps showing a row whose log was just moved to the trash.
+          if (typeof refreshSessions === 'function') await refreshSessions()
           setNotice(typeof message === 'function' ? message(value) : (message ?? t.done))
           return value
         } catch (failure) {
@@ -225,7 +230,7 @@ window.__ModuleLoader__.load({
           setBusy(false)
           setPendingAction(null)
         }
-      }, [refresh, t])
+      }, [refresh, refreshSessions, t])
 
       const archived = state?.archived ?? []
       const trash = state?.trash ?? []
@@ -249,7 +254,13 @@ window.__ModuleLoader__.load({
           const ids = pendingAction.ids
           perform(
             () => rpc('deleteSessions', { ids, requireArchived: true }),
-            result => ((result?.deleted?.length ?? 0) === 0 && (result?.cleaned?.length ?? 0) > 0 ? t.cleaned : t.done),
+            result => {
+              const removed = (result?.deleted?.length ?? 0) + (result?.cleaned?.length ?? 0)
+              if (removed === 0) return t.done
+              if ((result?.resident?.length ?? 0) > 0) return t.restartNotice
+              if ((result?.deleted?.length ?? 0) === 0) return t.cleaned
+              return t.done
+            },
           )
           return
         }
@@ -389,7 +400,7 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function SessionDeleteAction({ sessionId, dictionary, ...props }) {
+    function SessionDeleteAction({ sessionId, dictionary, refreshSessions, ...props }) {
       const t = dictionary
       // The row's slot hands us the Workspace snapshot, so the entry can stay
       // hidden on every Session it would refuse. An unreadable snapshot falls
@@ -403,6 +414,7 @@ window.__ModuleLoader__.load({
       const archivedIds = archived?.archivedSessionIds ?? archived?.archived
       const [busy, setBusy] = useState(false)
       const [failure, setFailure] = useState('')
+      const [note, setNote] = useState('')
 
       const remove = useCallback(async (event) => {
         event?.preventDefault?.()
@@ -410,20 +422,27 @@ window.__ModuleLoader__.load({
         if (busy || typeof sessionId !== 'string' || sessionId === '') return
         setBusy(true)
         setFailure('')
+        setNote('')
         try {
           const result = await rpc('deleteSessions', { ids: [sessionId], requireArchived: true })
+          // The sidebar's Session list is a client snapshot; pull it again or the
+          // row survives until the next full refresh of the page.
+          if (typeof refreshSessions === 'function') await refreshSessions()
           const skipped = Array.isArray(result?.skipped) && result.skipped.length > 0 ? result.skipped[0] : undefined
           if (skipped !== undefined) setFailure(skipped.reason)
+          else if ((result?.resident?.length ?? 0) > 0) setNote(t.restartNotice)
         } catch (error) {
           setFailure(String(error?.message ?? error))
         } finally {
           setBusy(false)
         }
-      }, [busy, sessionId])
+      }, [busy, refreshSessions, sessionId, t])
 
       if (Array.isArray(archivedIds) && !archivedIds.includes(sessionId)) return null
 
-      const label = busy ? t.deleting : (failure === '' ? t.menuDelete : `${t.failed}: ${failure}`)
+      const label = busy
+        ? t.deleting
+        : (failure !== '' ? `${t.failed}: ${failure}` : (note !== '' ? note : t.menuDelete))
 
       return h('button', {
         type: 'button',
@@ -453,13 +472,35 @@ window.__ModuleLoader__.load({
       inject: ['slots'],
       apply(ctx) {
         const dictionary = dictionaryFor(ctx)
+        // The sidebar keeps its own Session list snapshot; every cleanup action
+        // goes through here so a removed or restored row shows up immediately
+        // instead of waiting for the next page load.
+        const refreshSessions = async () => {
+          const sessions = ctx.get('sessions')
+          if (sessions !== undefined && typeof sessions.refresh === 'function') {
+            try {
+              await sessions.refresh()
+              return
+            } catch {
+              // Fall through to the recovery path below.
+            }
+          }
+          // A composition without that entry point still re-pulls the baseline
+          // when the connection re-establishes.
+          try {
+            const connection = ctx.get('connection')
+            if (connection !== undefined && typeof connection.reconnect === 'function') connection.reconnect()
+          } catch {
+            // Nothing else can invalidate the list from here.
+          }
+        }
 
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
           id: 'session-cleanup',
           order: 16,
           label: () => dictionary.nav,
-        }, props => h(CleanupPage, { ...props, dictionary })))
+        }, props => h(CleanupPage, { ...props, dictionary, refreshSessions })))
 
         ctx.slots.inject('sidebar.workspaces.session.menu.item', () => ctx.slots.register({
           name: 'sidebar.workspaces.session.menu.item',
@@ -468,7 +509,7 @@ window.__ModuleLoader__.load({
           label: () => dictionary.menuDelete,
         }, props => {
           try {
-            return h(SessionDeleteAction, { ...props, dictionary })
+            return h(SessionDeleteAction, { ...props, dictionary, refreshSessions })
           } catch {
             return null
           }
