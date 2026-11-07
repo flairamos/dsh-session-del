@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session cleanup",
+    "description": "Permanently removes archived Sessions and stale Harness scratch files, through a trash you can still restore from."
+  }
+}

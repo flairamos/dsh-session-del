@@ -1,0 +1,3 @@
+- insert:
+    - id: session-cleanup
+      name: '@local/dsh-session-cleanup'
