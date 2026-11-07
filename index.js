@@ -151,7 +151,10 @@ function createRuntime(ctx) {
   function announceRemovedList(payload) {
     const ids = Array.isArray(payload?.ids) ? payload.ids.filter(isSessionId) : []
     let announced = 0
-    for (const id of ids) if (announceRemoved(id)) announced += 1
+    for (const id of ids) {
+      retired.add(id)
+      if (announceRemoved(id)) announced += 1
+    }
     return { announced }
   }
 
@@ -174,13 +177,14 @@ function createRuntime(ctx) {
     } catch {
       return leftovers
     }
-    const now = Date.now()
     for (const session of live) {
       const id = session?.id
-      if (typeof id !== 'string' || persisted.has(id)) continue
+      if (typeof id !== 'string' || persisted.has(id) || retired.has(id)) continue
+      // A blank "New session" holds no events and has no log yet by design; a
+      // Session that once held events but lost its log is the leftover to repair.
+      const events = typeof session?.seq === 'number' ? session.seq : 0
+      if (events <= 0) continue
       const createdAt = session?.header?.createdAt
-      // A Session created moments ago has no log yet; only settled ones count.
-      if (typeof createdAt === 'number' && now - createdAt < 5 * 60 * 1000) continue
       leftovers.push({ id, createdAt: typeof createdAt === 'number' ? createdAt : undefined })
     }
     return leftovers
