@@ -46,6 +46,9 @@ window.__ModuleLoader__.load({
       roots: 'Locations',
       missingFiles: 'files already gone',
       cleaned: 'Stale registrations cleared.',
+      leftoversHeading: 'Rows left behind',
+      leftoversHint: 'Sessions whose log is already gone but whose row the page still shows. Removing a row here only hides it; nothing on disk changes.',
+      leftoversRemove: 'Remove from the list',
     }
 
     const ZH = {
@@ -79,6 +82,9 @@ window.__ModuleLoader__.load({
       roots: '位置',
       missingFiles: '文件已不在',
       cleaned: '已清理失效的归档登记。',
+      leftoversHeading: '残留的行',
+      leftoversHint: '日志已经不在、但页面仍在显示的会话。这里只会把它从列表里去掉，不会改动磁盘。',
+      leftoversRemove: '从列表移除',
     }
 
     const TOKENS = {
@@ -209,16 +215,14 @@ window.__ModuleLoader__.load({
         refresh()
       }, [refresh])
 
-      const perform = useCallback(async (task, message) => {
+      const perform = useCallback(async (task, message, options) => {
         setBusy(true)
         setError('')
         setNotice('')
         try {
           const value = await task()
           await refresh()
-          // The sidebar keeps its own Session list snapshot: without this pull it
-          // keeps showing a row whose log was just moved to the trash.
-          if (typeof refreshSessions === 'function') await refreshSessions()
+          if (typeof refreshSessions === 'function') await refreshSessions(options)
           setNotice(typeof message === 'function' ? message(value) : (message ?? t.done))
           return value
         } catch (failure) {
@@ -233,6 +237,7 @@ window.__ModuleLoader__.load({
       const archived = state?.archived ?? []
       const trash = state?.trash ?? []
       const temp = state?.temp ?? []
+      const leftovers = state?.leftovers ?? []
       const allSelected = archived.length > 0 && selected.length === archived.length
       const trashBytes = useMemo(() => trash.reduce((sum, batch) => sum + (batch.bytes ?? 0), 0), [trash])
       const tempBytes = useMemo(() => temp.reduce((sum, item) => sum + (item.bytes ?? 0), 0), [temp])
@@ -258,6 +263,7 @@ window.__ModuleLoader__.load({
               if ((result?.deleted?.length ?? 0) === 0) return t.cleaned
               return t.done
             },
+            { refresh: false },
           )
           return
         }
@@ -385,6 +391,29 @@ window.__ModuleLoader__.load({
             )),
         ),
 
+        leftovers.length > 0 ? h('div', { style: styles.block },
+          h('div', { style: styles.blockHead },
+            h('h3', { style: styles.blockTitle }, t.leftoversHeading),
+            h('span', { style: styles.counter }, t.sessionsUnit(leftovers.length)),
+            h(Button, {
+              variant: 'primary',
+              onClick: () => perform(
+                () => rpc('announceRemoved', { ids: leftovers.map(row => row.id) }),
+                t.done,
+                { refresh: false },
+              ),
+              disabled: busy,
+            }, t.leftoversRemove),
+          ),
+          h('p', { style: styles.hint }, t.leftoversHint),
+          leftovers.map(row => h('div', { key: row.id, style: styles.row },
+            h('span', { style: styles.rowMain },
+              h('span', { style: styles.rowTitle }, row.id),
+              h('span', { style: styles.rowMeta }, formatTime(row.createdAt, '') || t.missingFiles),
+            ),
+          )),
+        ) : null,
+
         state?.roots ? h('div', { style: styles.block },
           h('h3', { style: styles.blockTitle }, t.roots),
           h('div', { style: styles.roots },
@@ -420,9 +449,9 @@ window.__ModuleLoader__.load({
         setFailure('')
         try {
           const result = await rpc('deleteSessions', { ids: [sessionId], requireArchived: true })
-          // The sidebar's Session list is a client snapshot; pull it again and
-          // announce the removal so the row goes away at once.
-          if (typeof refreshSessions === 'function') await refreshSessions()
+          // No list pull here: the Host announced the removal, and re-listing a
+          // resident Session would bring the row straight back.
+          if (typeof refreshSessions === 'function') await refreshSessions({ refresh: false })
           const skipped = Array.isArray(result?.skipped) && result.skipped.length > 0 ? result.skipped[0] : undefined
           if (skipped !== undefined) setFailure(skipped.reason)
         } catch (error) {
@@ -431,7 +460,6 @@ window.__ModuleLoader__.load({
           setBusy(false)
         }
       }, [busy, refreshSessions, sessionId, t])
-
       if (Array.isArray(archivedIds) && !archivedIds.includes(sessionId)) return null
 
       const label = busy ? t.deleting : (failure !== '' ? `${t.failed}: ${failure}` : t.menuDelete)
@@ -464,25 +492,24 @@ window.__ModuleLoader__.load({
       inject: ['slots'],
       apply(ctx) {
         const dictionary = dictionaryFor(ctx)
-        // The sidebar keeps its own Session list snapshot; every cleanup action
-        // goes through here so a removed or restored row shows up immediately
-        // instead of waiting for the next page load.
-        const refreshSessions = async () => {
-          const sessions = ctx.get('sessions')
-          if (sessions !== undefined && typeof sessions.refresh === 'function') {
-            try {
-              await sessions.refresh()
-            } catch {
-              // The announcement below still drops the rows it can.
+        // A deleted Session must not be pulled back: the Host already announced
+        // its removal, and re-listing a resident Session would resurrect the row.
+        // Everything else re-lists first, then hides whatever is still retired.
+        const refreshSessions = async (options = {}) => {
+          if (options.refresh !== false) {
+            const sessions = ctx.get('sessions')
+            if (sessions !== undefined && typeof sessions.refresh === 'function') {
+              try {
+                await sessions.refresh()
+              } catch {
+                // The announcement below still drops the rows it can.
+              }
             }
           }
-          // A Session whose Agent is still resident keeps coming back through
-          // `session.list`; the controller's removal event is the only way to
-          // drop that row, so ask the Host to announce every trashed identity.
           try {
             await rpc('replayRemovals')
           } catch {
-            // Older Host halves have no such action; the refresh above stands.
+            // Older Host halves have no such action.
           }
         }
         // A page that opens later still has to forget rows deleted earlier.

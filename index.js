@@ -101,6 +101,8 @@ function createRuntime(ctx) {
         return probe()
       case 'replayRemovals':
         return replayRemovals()
+      case 'announceRemoved':
+        return announceRemovedList(payload)
       default:
         throw new Error(`Unknown action ${JSON.stringify(action)}`)
     }
@@ -116,6 +118,9 @@ function createRuntime(ctx) {
    * whose log sits in the trash — including after a page reload.
    * @returns how many identities were announced.
    */
+  /** Sessions this process removed; the trash manifests outlive a reload, this set does not. */
+  const retired = new Set()
+
   async function replayRemovals() {
     const ids = await retiredSessionIds()
     let announced = 0
@@ -138,9 +143,53 @@ function createRuntime(ctx) {
     }
   }
 
+  /**
+   * Announce an explicit list of removed Sessions, for a row the trash no longer
+   * remembers (a batch emptied before the page dropped its row).
+   * @param payload - `{ ids }`.
+   */
+  function announceRemovedList(payload) {
+    const ids = Array.isArray(payload?.ids) ? payload.ids.filter(isSessionId) : []
+    let announced = 0
+    for (const id of ids) if (announceRemoved(id)) announced += 1
+    return { announced }
+  }
+
+  /**
+   * Live Sessions whose log is gone: leftovers that keep a row alive after the
+   * trash was emptied, or after a delete that found nothing left to move.
+   * @returns `{ id, createdAt }` per leftover.
+   */
+  async function leftoverSessions() {
+    const leftovers = []
+    let persisted
+    try {
+      persisted = new Set((await ctx.sessionPersistence.list()).map(snapshot => snapshot?.header?.id))
+    } catch {
+      return leftovers
+    }
+    let live = []
+    try {
+      live = ctx.get('sessions')?.list?.() ?? []
+    } catch {
+      return leftovers
+    }
+    const now = Date.now()
+    for (const session of live) {
+      const id = session?.id
+      if (typeof id !== 'string' || persisted.has(id)) continue
+      const createdAt = session?.header?.createdAt
+      // A Session created moments ago has no log yet; only settled ones count.
+      if (typeof createdAt === 'number' && now - createdAt < 5 * 60 * 1000) continue
+      leftovers.push({ id, createdAt: typeof createdAt === 'number' ? createdAt : undefined })
+    }
+    return leftovers
+  }
+
   /** @returns the Session ids whose logs are in the trash. */
-  async function retiredSessionIds() {    const roots = await resolveRoots(ctx)
-    const ids = new Set()
+  async function retiredSessionIds() {
+    const roots = await resolveRoots(ctx)
+    const ids = new Set(retired)
     let batches = []
     try {
       batches = await readdir(roots.trashRoot, { withFileTypes: true })
@@ -207,6 +256,7 @@ function createRuntime(ctx) {
       trash,
       temp,
       tempAgeHours: Math.round(TEMP_AGE_MS / 3_600_000),
+      leftovers: await leftoverSessions(),
     }
   }
 
@@ -338,7 +388,10 @@ function createRuntime(ctx) {
     }
     // Announce here rather than waiting for the browser to ask: a page that still
     // runs an older client half must lose the row too.
-    for (const id of [...deleted.map(entry => entry.id), ...cleaned]) announceRemoved(id)
+    for (const id of [...deleted.map(entry => entry.id), ...cleaned]) {
+      retired.add(id)
+      announceRemoved(id)
+    }
     return {
       batchId: manifest.entries.length > 0 ? batchId : undefined,
       deleted,
@@ -378,6 +431,7 @@ function createRuntime(ctx) {
           }
         }
         if (entry.wasArchived === true) await rearchive(ctx, entry.sessionId)
+        retired.delete(entry.sessionId)
         restored.push(entry.sessionId)
       } catch (error) {
         failed.push({ id: entry.sessionId, reason: messageOf(error) })
