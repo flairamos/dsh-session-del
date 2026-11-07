@@ -7,7 +7,7 @@
  */
 
 window.__ModuleLoader__.load({
-  id: '@local/dsh-session-cleanup',
+  id: 'dsh-plugin-session-cleanup',
   factory(require) {
     const React = require('react')
     const h = React.createElement

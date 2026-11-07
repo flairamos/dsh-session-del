@@ -64,3 +64,4 @@ A Harness plugin that permanently removes archived Sessions (DSH has no delete v
 ## 卸载 / Removing it
 
 在 Plugin Manager 里移除 bundle `@local/dsh-session-cleanup`（或 `plugin_manager` 的 `remove_bundle`）。隔离区不会自动删除，需要时可手动删 `~/.dsh/trash`。
+

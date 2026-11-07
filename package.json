@@ -1,8 +1,25 @@
 {
-  "name": "@local/dsh-session-cleanup",
+  "name": "dsh-plugin-session-cleanup",
   "version": "1.0.0",
-  "private": true,
-  "description": "Purge archived Sessions and stale Harness scratch data, with a restorable trash",
+  "description": "Delete archived DeepSeek Harness Sessions and stale scratch files, through a restorable trash.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "bundle",
+    "session",
+    "cleanup"
+  ],
+  "license": "MIT",
+  "author": "flairamos",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flairamos/dsh-session-cleanup.git"
+  },
+  "homepage": "https://github.com/flairamos/dsh-session-cleanup#readme",
+  "bugs": {
+    "url": "https://github.com/flairamos/dsh-session-cleanup/issues"
+  },
   "type": "module",
   "exports": {
     ".": "./index.js",
@@ -15,14 +32,20 @@
     "client.js",
     "cordis.patch.yml",
     "README.md",
+    "LICENSE",
     "locale/*.json",
     "icon.svg"
   ],
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "immediately": true
     }
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
