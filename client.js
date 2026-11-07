@@ -44,6 +44,8 @@ window.__ModuleLoader__.load({
       failed: 'Failed',
       done: 'Done.',
       roots: 'Locations',
+      missingFiles: 'files already gone',
+      cleaned: 'Stale registrations cleared.',
     }
 
     const ZH = {
@@ -75,6 +77,8 @@ window.__ModuleLoader__.load({
       failed: '失败',
       done: '已完成。',
       roots: '位置',
+      missingFiles: '文件已不在',
+      cleaned: '已清理失效的归档登记。',
     }
 
     const TOKENS = {
@@ -212,7 +216,7 @@ window.__ModuleLoader__.load({
         try {
           const value = await task()
           await refresh()
-          setNotice(message ?? t.done)
+          setNotice(typeof message === 'function' ? message(value) : (message ?? t.done))
           return value
         } catch (failure) {
           setError(String(failure?.message ?? failure))
@@ -243,7 +247,10 @@ window.__ModuleLoader__.load({
         if (pendingAction === null) return
         if (pendingAction.kind === 'delete') {
           const ids = pendingAction.ids
-          perform(() => rpc('deleteSessions', { ids, requireArchived: true }), t.done)
+          perform(
+            () => rpc('deleteSessions', { ids, requireArchived: true }),
+            result => ((result?.deleted?.length ?? 0) === 0 && (result?.cleaned?.length ?? 0) > 0 ? t.cleaned : t.done),
+          )
           return
         }
         if (pendingAction.kind === 'empty') {
@@ -301,7 +308,7 @@ window.__ModuleLoader__.load({
               h('span', { style: styles.rowMain },
                 h('span', { style: styles.rowTitle }, row.title ?? row.id),
                 h('span', { style: styles.rowMeta },
-                  [row.cwd, formatTime(row.createdAt, ''), formatBytes(row.bytes)].filter(Boolean).join(' · ')),
+                  [row.cwd, formatTime(row.createdAt, ''), row.missing === true ? t.missingFiles : formatBytes(row.bytes)].filter(Boolean).join(' · ')),
                 h('span', { style: styles.rowMeta }, row.id),
               ),
             )),

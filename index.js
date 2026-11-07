@@ -176,8 +176,24 @@ function createRuntime(ctx) {
     const batchDir = join(roots.trashRoot, batchId)
     const manifest = { version: 1, kind: 'sessions', batchId, createdAt: new Date().toISOString(), entries: [] }
     const deleted = []
+    const cleaned = []
 
     for (const id of removable) {
+      // Resolve what exists before touching anything: a registration can outlive
+      // its files, and that case must clear the registration without inventing a
+      // trash batch nobody can restore.
+      const sessionDir = await findSessionDir(ctx, roots, id)
+      const cachePath = join(roots.home, 'storages', 'session_projcache', 'sessions', `${id}.json`)
+      const cacheExists = await pathInfo(cachePath) !== undefined
+
+      if (sessionDir === undefined && !cacheExists) {
+        await detachEverywhere(ctx, id)
+        const reason = await unarchive(ctx, id)
+        if (reason === undefined) cleaned.push(id)
+        else skipped.push({ id, reason })
+        continue
+      }
+
       const workspaceId = store.owner.get(id)
       const siblings = workspaceId === undefined ? undefined : store.order.get(workspaceId)
       const at = siblings === undefined ? -1 : siblings.indexOf(id)
@@ -186,25 +202,25 @@ function createRuntime(ctx) {
         workspaceId,
         siblingId: at >= 0 && at + 1 < siblings.length ? siblings[at + 1] : undefined,
         wasArchived: store.archived.includes(id),
-        sessionDir: undefined,
+        sessionDir,
         sessionTrash: undefined,
-        cachePath: undefined,
+        cachePath: cacheExists ? cachePath : undefined,
         cacheTrash: undefined,
         bytes: 0,
       }
       await detachEverywhere(ctx, id)
-      await unarchive(ctx, id)
+      const reason = await unarchive(ctx, id)
+      if (reason !== undefined) {
+        skipped.push({ id, reason })
+        continue
+      }
 
-      const sessionDir = await findSessionDir(ctx, roots, id)
       if (sessionDir !== undefined) {
         entry.bytes = (await measure(sessionDir)).bytes
-        entry.sessionDir = sessionDir
         entry.sessionTrash = join(batchDir, 'sessions', id)
         await movePath(sessionDir, entry.sessionTrash)
       }
-      const cachePath = join(roots.home, 'storages', 'session_projcache', 'sessions', `${id}.json`)
-      if (await pathInfo(cachePath) !== undefined) {
-        entry.cachePath = cachePath
+      if (cacheExists) {
         entry.cacheTrash = join(batchDir, 'projcache', `${id}.json`)
         await movePath(cachePath, entry.cacheTrash)
       }
@@ -224,6 +240,7 @@ function createRuntime(ctx) {
     return {
       batchId: manifest.entries.length > 0 ? batchId : undefined,
       deleted,
+      cleaned,
       skipped,
     }
   }
@@ -365,11 +382,18 @@ async function liveSessionIds(ctx) {
   }
 }
 
+/**
+ * Drop one Session from the archive set.
+ * @param ctx - plugin context.
+ * @param id - Session id.
+ * @returns the failure reason, or undefined once the record is cleared.
+ */
 async function unarchive(ctx, id) {
   try {
     await ctx.workspaceRegistry.unarchiveSession(id)
-  } catch {
-    // Already absent from the archive set is the outcome this wants anyway.
+    return undefined
+  } catch (error) {
+    return `The archive record could not be cleared: ${messageOf(error)}`
   }
 }
 
@@ -506,6 +530,7 @@ async function listArchived(ctx, roots) {
       cachePath: cacheInfo === undefined ? undefined : cachePath,
       bytes: measured.bytes + (cacheInfo?.size ?? 0),
       workspaceId: store.owner.get(id),
+      missing: sessionDir === undefined && cacheInfo === undefined,
     })
   }
   entries.sort((left, right) => (right.createdAt ?? 0) - (left.createdAt ?? 0))
