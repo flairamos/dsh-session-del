@@ -15,80 +15,94 @@ window.__ModuleLoader__.load({
 
     const RPC_PATH = '/dsh-session-cleanup/rpc'
 
-    const EN = {
-      nav: 'Storage cleanup',
-      heading: 'Storage cleanup',
-      lead: 'Archived Sessions and stale scratch files leave your disk but stay recoverable in the trash until you empty it.',
-      archivedHeading: 'Archived Sessions',
-      archivedEmpty: 'No Session is archived right now.',
-      selectAll: 'Select all',
-      deleteSelected: 'Move to trash',
-      confirmDelete: (count) => `Move ${count} Session(s) to the trash? The project files stay untouched.`,
-      confirm: 'Confirm',
-      cancel: 'Cancel',
-      trashHeading: 'Trash',
-      trashEmpty: 'The trash is empty.',
-      restore: 'Restore',
-      emptyTrash: 'Empty trash',
-      confirmEmpty: 'Permanently delete everything in the trash? This cannot be undone.',
-      tempHeading: 'Scratch files',
-      tempHint: (hours) => `Harness scratch directories in the OS temp folder, untouched for more than ${hours} hours.`,
-      tempEmpty: 'Nothing stale was found.',
-      purgeTemp: 'Move to trash',
-      refresh: 'Refresh',
-      loading: 'Reading disk…',
-      sessionsUnit: (count) => `${count} Session(s)`,
-      itemsUnit: (count) => `${count} item(s)`,
-      menuDelete: 'Permanently delete',
-      deleting: 'Deleting…',
-      failed: 'Failed',
-      done: 'Done.',
-      roots: 'Locations',
-      missingFiles: 'files already gone',
-      cleaned: 'Stale registrations cleared.',
-      leftoversHeading: 'Rows left behind',
-      leftoversHint: 'Sessions whose log is already gone but whose row the page still shows. Removing a row here only hides it; nothing on disk changes.',
-      leftoversRemove: 'Remove from the list',
+    // Translated through `ctx.locale` when the page has it; the English table is
+    // also the runtime fallback, so an unknown locale shows real words, not keys.
+    const DICTIONARIES = {
+      en: {
+        nav: 'Storage cleanup',
+        heading: 'Storage cleanup',
+        lead: 'Archived Sessions and stale scratch files leave your disk but stay recoverable in the trash until you empty it.',
+        archivedHeading: 'Archived Sessions',
+        archivedEmpty: 'No Session is archived right now.',
+        selectAll: 'Select all',
+        deleteSelected: 'Move to trash',
+        confirmDeleteText: 'Move the selected Sessions to the trash? The project files stay untouched.',
+        confirm: 'Confirm',
+        cancel: 'Cancel',
+        trashHeading: 'Trash',
+        trashEmpty: 'The trash is empty.',
+        restore: 'Restore',
+        emptyTrash: 'Empty trash',
+        confirmEmpty: 'Permanently delete everything in the trash? This cannot be undone.',
+        tempHeading: 'Scratch files',
+        tempHintText: 'Harness scratch directories in the OS temp folder that no process touched for a while.',
+        tempEmpty: 'Nothing stale was found.',
+        purgeTemp: 'Move to trash',
+        refresh: 'Refresh',
+        loading: 'Reading disk…',
+        sessionWord: 'Session(s)',
+        itemWord: 'item(s)',
+        menuDelete: 'Permanently delete',
+        deleting: 'Deleting…',
+        failed: 'Failed',
+        done: 'Done.',
+        roots: 'Locations',
+        missingFiles: 'files already gone',
+        cleaned: 'Stale registrations cleared.',
+        leftoversHeading: 'Rows left behind',
+        leftoversHint: 'Sessions whose log is already gone but whose row the page still shows. Removing a row here only hides it; nothing on disk changes.',
+        leftoversRemove: 'Remove from the list',
+        reasonNotArchived: 'This Session is not archived, so it stays.',
+        reasonRunning: 'This Session is running; stop it first.',
+        reasonArchiveRecord: 'The archive record could not be cleared; the files were still removed.',
+        reasonNoSelection: 'Select at least one Session to delete.',
+        reasonInvalidBatch: 'That trash batch id is not valid.',
+        errorUnknown: 'The operation failed.',
+      },
+      zh: {
+        nav: '存储清理',
+        heading: '存储清理',
+        lead: '已归档的会话与过期的临时文件会从磁盘移走，但在清空隔离区之前都还能恢复；项目源码不受影响。',
+        archivedHeading: '已归档会话',
+        archivedEmpty: '当前没有已归档的会话。',
+        selectAll: '全选',
+        deleteSelected: '移入隔离区',
+        confirmDeleteText: '将所选会话移入隔离区？项目文件不会被动到。',
+        confirm: '确认',
+        cancel: '取消',
+        trashHeading: '隔离区',
+        trashEmpty: '隔离区是空的。',
+        restore: '恢复',
+        emptyTrash: '清空隔离区',
+        confirmEmpty: '永久删除隔离区里的全部内容？此操作不可撤销。',
+        tempHeading: '临时文件',
+        tempHintText: '系统临时目录里长时间未被任何进程改动的 Harness 临时目录。',
+        tempEmpty: '没有发现可清理的临时目录。',
+        purgeTemp: '移入隔离区',
+        refresh: '刷新',
+        loading: '正在读取磁盘…',
+        sessionWord: '个会话',
+        itemWord: '项',
+        menuDelete: '永久删除',
+        deleting: '删除中…',
+        failed: '失败',
+        done: '已完成。',
+        roots: '位置',
+        missingFiles: '文件已不在',
+        cleaned: '已清理失效的归档登记。',
+        leftoversHeading: '残留的行',
+        leftoversHint: '日志已经不在、但页面仍在显示的会话。这里只会把它从列表里去掉，不会改动磁盘。',
+        leftoversRemove: '从列表移除',
+        reasonNotArchived: '该会话没有归档，因此保持原样。',
+        reasonRunning: '该会话正在运行，请先停止。',
+        reasonArchiveRecord: '归档登记未能清除，但文件已经移入隔离区。',
+        reasonNoSelection: '请至少选择一个要删除的会话。',
+        reasonInvalidBatch: '隔离批次 id 无效。',
+        errorUnknown: '操作失败。',
+      },
     }
 
-    const ZH = {
-      nav: '存储清理',
-      heading: '存储清理',
-      lead: '已归档的会话与过期的临时文件会从磁盘移走，但在清空隔离区之前都还能恢复；项目源码不受影响。',
-      archivedHeading: '已归档会话',
-      archivedEmpty: '当前没有已归档的会话。',
-      selectAll: '全选',
-      deleteSelected: '移入隔离区',
-      confirmDelete: (count) => `将 ${count} 个会话移入隔离区？项目文件不会被动到。`,
-      confirm: '确认',
-      cancel: '取消',
-      trashHeading: '隔离区',
-      trashEmpty: '隔离区是空的。',
-      restore: '恢复',
-      emptyTrash: '清空隔离区',
-      confirmEmpty: '永久删除隔离区里的全部内容？此操作不可撤销。',
-      tempHeading: '临时文件',
-      tempHint: (hours) => `系统临时目录里超过 ${hours} 小时未被改动的 Harness 临时目录。`,
-      tempEmpty: '没有发现可清理的临时目录。',
-      purgeTemp: '移入隔离区',
-      refresh: '刷新',
-      loading: '正在读取磁盘…',
-      sessionsUnit: (count) => `${count} 个会话`,
-      itemsUnit: (count) => `${count} 项`,
-      menuDelete: '永久删除',
-      deleting: '删除中…',
-      failed: '失败',
-      done: '已完成。',
-      roots: '位置',
-      missingFiles: '文件已不在',
-      cleaned: '已清理失效的归档登记。',
-      leftoversHeading: '残留的行',
-      leftoversHint: '日志已经不在、但页面仍在显示的会话。这里只会把它从列表里去掉，不会改动磁盘。',
-      leftoversRemove: '从列表移除',
-    }
-
-    const TOKENS = {
-      text: 'var(--dsw-alias-label-primary)',
+    const TOKENS = {      text: 'var(--dsw-alias-label-primary)',
       muted: 'var(--dsw-alias-label-secondary)',
       border: 'var(--dsw-alias-border-l1)',
       layer: 'var(--dsw-alias-bg-layer-1)',
@@ -105,20 +119,105 @@ window.__ModuleLoader__.load({
       })
       if (!response.ok) throw new Error(`The cleanup endpoint answered ${response.status}.`)
       const body = await response.json()
-      if (body === null || body.ok !== true) throw new Error(body?.error ?? 'The cleanup endpoint failed.')
+      if (body === null || body.ok !== true) {
+        const failure = new Error(body?.error ?? 'The cleanup endpoint failed.')
+        failure.code = body?.code
+        throw failure
+      }
       return body.value
     }
 
-    function dictionaryFor(ctx) {
-      let localeId = ''
+    const FALLBACK = DICTIONARIES.en
+    const COMPOSED = new Set(['confirmDelete', 'sessionsUnit', 'itemsUnit', 'tempHint'])
+
+    function createTranslator(ctx) {
+      let bound
       try {
-        const snapshot = ctx.get('locale')?.getLocale?.()
-        localeId = typeof snapshot === 'string' ? snapshot : (snapshot?.id ?? '')
+        const locale = ctx.get('locale')
+        if (locale !== undefined) {
+          if (typeof locale.register === 'function') {
+            try {
+              ctx.effect(() => {
+                try {
+                  return locale.register('session-cleanup', DICTIONARIES)
+                } catch {
+                  // Plain-JS namespaces may need the per-locale form.
+                }
+                const disposers = []
+                for (const [id, dict] of Object.entries(DICTIONARIES)) {
+                  try {
+                    const dispose = locale.register('session-cleanup', id, dict)
+                    if (typeof dispose === 'function') disposers.push(dispose)
+                  } catch {
+                    // A locale the runtime refuses simply stays on English.
+                  }
+                }
+                return () => {
+                  for (const dispose of disposers) {
+                    try {
+                      dispose()
+                    } catch {
+                      // Already gone.
+                    }
+                  }
+                }
+              })
+            } catch {
+              // Registration is optional: the English table below still renders.
+            }
+          }
+          if (typeof locale.bind === 'function') bound = locale.bind('session-cleanup')
+        }
       } catch {
-        localeId = ''
+        bound = undefined
       }
-      if (localeId === '') localeId = (typeof navigator !== 'undefined' && navigator.language) || 'en'
-      return String(localeId).toLowerCase().startsWith('zh') ? ZH : EN
+      const read = (key) => {
+        if (bound !== undefined) {
+          try {
+            const value = bound(key)
+            if (typeof value === 'string' && value !== '' && value !== key) return value
+          } catch {
+            // Fall through to the English table.
+          }
+        }
+        return FALLBACK[key] ?? key
+      }
+      const t = {}
+      for (const key of Object.keys(FALLBACK)) {
+        if (COMPOSED.has(key)) continue
+        Object.defineProperty(t, key, { get: () => read(key), enumerable: true })
+      }
+      t.confirmDelete = count => `${read('confirmDeleteText')} (${count})`
+      t.sessionsUnit = count => `${count} ${read('sessionWord')}`
+      t.itemsUnit = count => `${count} ${read('itemWord')}`
+      t.tempHint = hours => `${read('tempHintText')} (${hours} h)`
+      return t
+    }
+
+    /** Localized text for one refused Session. */
+    function skipText(t, skipped) {
+      switch (skipped?.code) {
+        case 'not-archived':
+          return t.reasonNotArchived
+        case 'running':
+          return t.reasonRunning
+        case 'archive-record':
+          return t.reasonArchiveRecord
+        default:
+          return skipped?.reason ?? t.errorUnknown
+      }
+    }
+
+    /** Localized text for one failed request. */
+    function failureText(t, failure) {
+      switch (failure?.code) {
+        case 'no-selection':
+          return t.reasonNoSelection
+        case 'invalid-batch':
+          return t.reasonInvalidBatch
+        default:
+          return String(failure?.message ?? failure)
+      }
     }
 
     function formatBytes(bytes) {
@@ -207,9 +306,9 @@ window.__ModuleLoader__.load({
           setSelected(previous => previous.filter(id => (next.archived ?? []).some(row => row.id === id)))
           setError('')
         } catch (failure) {
-          setError(String(failure?.message ?? failure))
+          setError(failureText(t, failure))
         }
-      }, [])
+      }, [t])
 
       useEffect(() => {
         refresh()
@@ -226,7 +325,7 @@ window.__ModuleLoader__.load({
           setNotice(typeof message === 'function' ? message(value) : (message ?? t.done))
           return value
         } catch (failure) {
-          setError(String(failure?.message ?? failure))
+          setError(failureText(t, failure))
           return undefined
         } finally {
           setBusy(false)
@@ -453,9 +552,9 @@ window.__ModuleLoader__.load({
           // resident Session would bring the row straight back.
           if (typeof refreshSessions === 'function') await refreshSessions({ refresh: false })
           const skipped = Array.isArray(result?.skipped) && result.skipped.length > 0 ? result.skipped[0] : undefined
-          if (skipped !== undefined) setFailure(skipped.reason)
+          if (skipped !== undefined) setFailure(skipText(t, skipped))
         } catch (error) {
-          setFailure(String(error?.message ?? error))
+          setFailure(failureText(t, error))
         } finally {
           setBusy(false)
         }
@@ -491,7 +590,7 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots'],
       apply(ctx) {
-        const dictionary = dictionaryFor(ctx)
+        const dictionary = createTranslator(ctx)
         // A deleted Session must not be pulled back: the Host already announced
         // its removal, and re-listing a resident Session would resurrect the row.
         // Everything else re-lists first, then hides whatever is still retired.

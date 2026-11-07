@@ -78,7 +78,7 @@ function createRuntime(ctx) {
       sendJson(res, 200, { ok: true, value: await dispatch(action, payload) })
     } catch (error) {
       try {
-        sendJson(res, 200, { ok: false, error: messageOf(error) })
+        sendJson(res, 200, { ok: false, error: messageOf(error), code: error?.code })
       } catch {
         res.destroy()
       }
@@ -267,7 +267,7 @@ function createRuntime(ctx) {
   async function deleteSessions(payload) {
     const requested = Array.isArray(payload?.ids) ? payload.ids.filter(isSessionId) : []
     const requireArchived = payload?.requireArchived !== false
-    if (requested.length === 0) throw new Error('Select at least one Session to delete.')
+    if (requested.length === 0) throw codedError('no-selection', 'Select at least one Session to delete.')
 
     const roots = await resolveRoots(ctx)
     const store = await readWorkspaceStore(roots.home)
@@ -285,7 +285,7 @@ function createRuntime(ctx) {
     const skipped = []
     for (const id of requested) {
       if (requireArchived && !store.archived.includes(id)) {
-        skipped.push({ id, reason: 'This Session is not archived, so it stays.' })
+        skipped.push({ id, code: 'not-archived', reason: 'This Session is not archived, so it stays.' })
         continue
       }
       if (!targets.includes(id)) targets.push(id)
@@ -307,7 +307,7 @@ function createRuntime(ctx) {
     const removable = []
     for (const id of targets) {
       if (live.has(id)) {
-        skipped.push({ id, reason: 'This Session is live in this process; stop it first.' })
+        skipped.push({ id, code: 'running', reason: 'This Session is running; stop it first.' })
         continue
       }
       removable.push(id)
@@ -333,7 +333,7 @@ function createRuntime(ctx) {
         await detachEverywhere(ctx, id)
         const reason = await unarchive(ctx, id)
         if (reason === undefined) cleaned.push(id)
-        else skipped.push({ id, reason })
+        else skipped.push({ id, code: 'archive-record', reason })
         continue
       }
 
@@ -379,7 +379,7 @@ function createRuntime(ctx) {
         cache: entry.cachePath !== undefined,
       })
       const reason = await unarchive(ctx, id)
-      if (reason !== undefined) skipped.push({ id, reason })
+      if (reason !== undefined) skipped.push({ id, code: 'archive-record', reason })
     }
 
     if (manifest.entries.length > 0) {
@@ -404,7 +404,7 @@ function createRuntime(ctx) {
   /** Put a trash batch back where it came from. */
   async function restore(payload) {
     const batchId = typeof payload?.batchId === 'string' ? payload.batchId : ''
-    if (!BATCH_ID.test(batchId)) throw new Error('That trash batch id is not valid.')
+    if (!BATCH_ID.test(batchId)) throw codedError('invalid-batch', 'That trash batch id is not valid.')
     const roots = await resolveRoots(ctx)
     const batchDir = join(roots.trashRoot, batchId)
     const manifest = JSON.parse(await readFile(join(batchDir, 'manifest.json'), 'utf8'))
@@ -839,6 +839,13 @@ function sendJson(res, status, value) {
     'content-length': Buffer.byteLength(body),
   })
   res.end(body)
+}
+
+/** One failure with a stable code the browser can translate. */
+function codedError(code, message) {
+  const error = new Error(message)
+  error.code = code
+  return error
 }
 
 function messageOf(error) {
