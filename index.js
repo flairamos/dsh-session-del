@@ -119,20 +119,27 @@ function createRuntime(ctx) {
   async function replayRemovals() {
     const ids = await retiredSessionIds()
     let announced = 0
-    for (const id of ids) {
-      try {
-        ctx.emit('api-session/removed', id)
-        announced += 1
-      } catch {
-        // A composition without the Session controller listens to nothing.
-      }
-    }
+    for (const id of ids) if (announceRemoved(id)) announced += 1
     return { announced }
   }
 
+  /**
+   * Tell the browser to drop one Session row.
+   * @param id - Session identity.
+   * @returns whether a dispatch was attempted.
+   */
+  function announceRemoved(id) {
+    try {
+      ctx.emit('api-session/removed', id)
+      return true
+    } catch {
+      // A composition without the Session controller listens to nothing.
+      return false
+    }
+  }
+
   /** @returns the Session ids whose logs are in the trash. */
-  async function retiredSessionIds() {
-    const roots = await resolveRoots(ctx)
+  async function retiredSessionIds() {    const roots = await resolveRoots(ctx)
     const ids = new Set()
     let batches = []
     try {
@@ -329,6 +336,9 @@ function createRuntime(ctx) {
       await mkdir(batchDir, { recursive: true })
       await writeFile(join(batchDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8')
     }
+    // Announce here rather than waiting for the browser to ask: a page that still
+    // runs an older client half must lose the row too.
+    for (const id of [...deleted.map(entry => entry.id), ...cleaned]) announceRemoved(id)
     return {
       batchId: manifest.entries.length > 0 ? batchId : undefined,
       deleted,
