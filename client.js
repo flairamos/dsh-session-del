@@ -46,7 +46,6 @@ window.__ModuleLoader__.load({
       roots: 'Locations',
       missingFiles: 'files already gone',
       cleaned: 'Stale registrations cleared.',
-      restartNotice: 'Deleted. A Session still held in memory leaves the list after a restart.',
     }
 
     const ZH = {
@@ -80,7 +79,6 @@ window.__ModuleLoader__.load({
       roots: '位置',
       missingFiles: '文件已不在',
       cleaned: '已清理失效的归档登记。',
-      restartNotice: '已删除；仍有会话驻留在内存中，重启 Harness 后才会从列表消失。',
     }
 
     const TOKENS = {
@@ -257,7 +255,6 @@ window.__ModuleLoader__.load({
             result => {
               const removed = (result?.deleted?.length ?? 0) + (result?.cleaned?.length ?? 0)
               if (removed === 0) return t.done
-              if ((result?.resident?.length ?? 0) > 0) return t.restartNotice
               if ((result?.deleted?.length ?? 0) === 0) return t.cleaned
               return t.done
             },
@@ -414,7 +411,6 @@ window.__ModuleLoader__.load({
       const archivedIds = archived?.archivedSessionIds ?? archived?.archived
       const [busy, setBusy] = useState(false)
       const [failure, setFailure] = useState('')
-      const [note, setNote] = useState('')
 
       const remove = useCallback(async (event) => {
         event?.preventDefault?.()
@@ -422,15 +418,13 @@ window.__ModuleLoader__.load({
         if (busy || typeof sessionId !== 'string' || sessionId === '') return
         setBusy(true)
         setFailure('')
-        setNote('')
         try {
           const result = await rpc('deleteSessions', { ids: [sessionId], requireArchived: true })
-          // The sidebar's Session list is a client snapshot; pull it again or the
-          // row survives until the next full refresh of the page.
+          // The sidebar's Session list is a client snapshot; pull it again and
+          // announce the removal so the row goes away at once.
           if (typeof refreshSessions === 'function') await refreshSessions()
           const skipped = Array.isArray(result?.skipped) && result.skipped.length > 0 ? result.skipped[0] : undefined
           if (skipped !== undefined) setFailure(skipped.reason)
-          else if ((result?.resident?.length ?? 0) > 0) setNote(t.restartNotice)
         } catch (error) {
           setFailure(String(error?.message ?? error))
         } finally {
@@ -440,9 +434,7 @@ window.__ModuleLoader__.load({
 
       if (Array.isArray(archivedIds) && !archivedIds.includes(sessionId)) return null
 
-      const label = busy
-        ? t.deleting
-        : (failure !== '' ? `${t.failed}: ${failure}` : (note !== '' ? note : t.menuDelete))
+      const label = busy ? t.deleting : (failure !== '' ? `${t.failed}: ${failure}` : t.menuDelete)
 
       return h('button', {
         type: 'button',
@@ -480,20 +472,23 @@ window.__ModuleLoader__.load({
           if (sessions !== undefined && typeof sessions.refresh === 'function') {
             try {
               await sessions.refresh()
-              return
             } catch {
-              // Fall through to the recovery path below.
+              // The announcement below still drops the rows it can.
             }
           }
-          // A composition without that entry point still re-pulls the baseline
-          // when the connection re-establishes.
+          // A Session whose Agent is still resident keeps coming back through
+          // `session.list`; the controller's removal event is the only way to
+          // drop that row, so ask the Host to announce every trashed identity.
           try {
-            const connection = ctx.get('connection')
-            if (connection !== undefined && typeof connection.reconnect === 'function') connection.reconnect()
+            await rpc('replayRemovals')
           } catch {
-            // Nothing else can invalidate the list from here.
+            // Older Host halves have no such action; the refresh above stands.
           }
         }
+        // A page that opens later still has to forget rows deleted earlier.
+        setTimeout(() => {
+          rpc('replayRemovals').catch(() => {})
+        }, 2500)
 
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',

@@ -99,9 +99,59 @@ function createRuntime(ctx) {
         return serialize(() => purgeTemp(payload))
       case 'probe':
         return probe()
+      case 'replayRemovals':
+        return replayRemovals()
       default:
         throw new Error(`Unknown action ${JSON.stringify(action)}`)
     }
+  }
+
+  /**
+   * Tell the browser that these Sessions are gone.
+   *
+   * `session.list` is live-preferred: a Session whose Agent is still resident in
+   * this process keeps its row until the process ends, and no plugin may evict
+   * that Agent. The Session controller's own `api-session/removed` event is the
+   * one supported way to drop such a row, so this plugin announces every Session
+   * whose log sits in the trash — including after a page reload.
+   * @returns how many identities were announced.
+   */
+  async function replayRemovals() {
+    const ids = await retiredSessionIds()
+    let announced = 0
+    for (const id of ids) {
+      try {
+        ctx.emit('api-session/removed', id)
+        announced += 1
+      } catch {
+        // A composition without the Session controller listens to nothing.
+      }
+    }
+    return { announced }
+  }
+
+  /** @returns the Session ids whose logs are in the trash. */
+  async function retiredSessionIds() {
+    const roots = await resolveRoots(ctx)
+    const ids = new Set()
+    let batches = []
+    try {
+      batches = await readdir(roots.trashRoot, { withFileTypes: true })
+    } catch {
+      return ids
+    }
+    for (const batch of batches) {
+      if (!batch.isDirectory()) continue
+      try {
+        const manifest = JSON.parse(await readFile(join(roots.trashRoot, batch.name, 'manifest.json'), 'utf8'))
+        for (const entry of manifest?.entries ?? []) {
+          if (isSessionId(entry?.sessionId)) ids.add(entry.sessionId)
+        }
+      } catch {
+        // An unreadable batch is simply not announced.
+      }
+    }
+    return ids
   }
 
   /** Temporary diagnostic: what every layer still reports after a delete. */

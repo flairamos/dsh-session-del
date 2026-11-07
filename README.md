@@ -42,16 +42,27 @@ A DeepSeek Harness plugin that permanently removes archived Sessions — DSH has
 
 - **文件已经不在、只剩归档登记**：不产生隔离批次，只清掉登记，结果里记为 `cleaned`。设置页会把这类行标成「文件已不在」。
 - **拒绝删除**：会话没有归档（API 层可用 `requireArchived: false` 关闭），或会话正在运行（`agent.status === 'running'`）。
-- **行不会残留**：删除/恢复成功后，浏览器半会重新拉取会话列表（`ctx.get('sessions').refresh()`），侧边栏那一行立即消失或回来，不需要重启。
+- **行立刻消失**：删除/恢复成功后，浏览器半先 `ctx.get('sessions').refresh()` 重新拉取列表，再让 Host 广播 `api-session/removed`。见下节。
+
+## 为什么驻留内存的会话也能消失 / Why a resident Session still leaves the list
+
+`ctx.remote.session.list` 是 live-preferred 的：一个在本进程里被打开过的会话（Agent 还驻留在内存，状态 `idle`）即使日志已经被移走，Host 仍会把它列出来，而行首标题会退化成占位文本、分组掉进「未分组」。插件的 `ctx.sessions` / `ctx.agents` 都没有「逐出某个 Agent」的公开能力，因此只能在**呈现层**让它消失：
+
+- 每次删除/恢复后，Host 把「隔离区 manifest 里出现的会话 id」通过 `ctx.emit('api-session/removed', id)` 广播一次；这正是 Session 控制器自己移除会话时用的通道（`@deepseek-ai/dsh-api-remotes` 把它转发给页面，客户端 `handleSessionRemoved` 会从列表里删除该行）。
+- 页面重新加载后，浏览器半会在启动约 2.5 秒后再请求一次 `replayRemovals`，所以刷新页面也不会让这些行回来。
+- 会话被恢复后，它不再出现在任何 manifest 里，自然也不再被广播。
 
 ## 已知限制 / Known limitations
 
-- **仍驻留内存的会话**：如果这个会话在当前进程里被打开过（Agent 仍在内存中，状态 `idle`），它的文件和归档登记都已经删掉，但侧边栏那行要等重启 Harness 才会消失——列表由内存里的 Session 记录构成，插件无法从外部把它逐出。删除结果里的 `resident` 字段会列出这种情况，界面也会提示。
+- **重启前 Host 仍是权威**：上面那条只影响页面呈现。若在此期间又打开一次 Harness，Host 的 `session.list` 会再次包含该驻留会话，然后由插件重新广播移除；真正让它从 Host 列表消失仍要等进程结束。
 - **升级后刷新一次页面**：浏览器半是随页面加载的，插件更新（或首次安装）之后需要刷新一次 Harness 页面，新的 client 代码才会生效。
 
 ## 诊断 / Diagnostics
 
-`POST /dsh-session-cleanup/rpc` 带 `{"action":"probe"}` 返回各层当前看到的会话：`sessionPersistence`、`sessionQuery`（含 `live`/`persisted`）、内存 Session 表、以及 Agent 列表。排查「删了还显示」时先看这里：只要 `query` 里还有 `live: true`，就属于上面那条限制。
+`POST /dsh-session-cleanup/rpc`：
+
+- `{"action":"probe"}`：返回各层当前看到的会话——`sessionPersistence`、`sessionQuery`（含 `live`/`persisted`）、内存 Session 表、Agent 列表。
+- `{"action":"replayRemovals"}`：重新广播所有隔离区会话的移除事件，返回本次广播了几个身份。
 
 ## 隔离区 / Trash
 
